@@ -8,9 +8,10 @@ from tqdm import tqdm
 
 class GEMVAE():
 
-    def __init__(self, hidden_dims1, hidden_dims2,z_dim=30, a=0, alpha=0, n_epochs=500, lr=0.0001, 
+    def __init__(self, hidden_dims1, hidden_dims2,z_dim=30, alpha=0, n_epochs=500, lr=0.0001, 
                  gradient_clipping=5, nonlinear=True, weight_decay=0.0001, 
                  verbose=True, random_seed=2020,
+                 kl_loss = 0,contrastive_loss = 10,recon_loss = 1,weight_decay_loss = 1,recon_loss_type = "MSE",
                  ):
         
         np.random.seed(random_seed)
@@ -22,13 +23,22 @@ class GEMVAE():
         self.build_placeholders()
         self.verbose = verbose
         self.alpha = alpha
-        self.a=a
+
+        self.kl_loss = kl_loss
+        self.contrastive_loss = contrastive_loss
+        self.recon_loss = recon_loss
+        self.weight_decay_loss = weight_decay_loss
+        self.recon_loss_type = recon_loss_type
+
+
         global C
            
 
-        self.gate = GATE(hidden_dims1,hidden_dims2,z_dim,a,alpha, nonlinear, weight_decay)
+        self.gate = GATE(hidden_dims1,hidden_dims2,z_dim,alpha, nonlinear, weight_decay,
+                kl_loss = kl_loss,contrastive_loss = contrastive_loss,recon_loss = recon_loss,weight_decay_loss = weight_decay_loss,recon_loss_type = recon_loss_type )
+        
+        
         self.c_loss, self.loss, self.H, self.C, self.ReX1, self.ReX2 = self.gate(self.A1,self.A2, self.prune_A1,self.prune_A2, self.X1,self.X2)
-        #print(self.loss, self.H, self.C, self.ReX1, self.ReX2,sep='\n')
 
         self.optimize(self.loss)
         self.build_session()
@@ -97,7 +107,7 @@ class GEMVAE():
     def Conbine_Atten_1(self, input):
        
         if self.alpha == 0:
-            return [sp.coo_matrix((input[layer][1], (input[layer][0][:, 0], input[layer][0][:, 1])), shape=(input[layer][2][0], input[layer][2][1])) for layer in input]
+            return [sp.coo_matrix((input['C1'][layer][1], (input['C1'][layer][0][:, 0], input['C1'][layer][0][:, 1])), shape=(input['C1'][layer][2][0], input['C1'][layer][2][1])) for layer in input['C1']]
         else:
             
             Att_C = [sp.coo_matrix((input['C1'][layer][1], (input['C1'][layer][0][:, 0], input['C1'][layer][0][:, 1])), shape=(input['C1'][layer][2][0], input['C1'][layer][2][1])) for layer in input['C1']]
@@ -108,7 +118,7 @@ class GEMVAE():
     def Conbine_Atten_2(self, input):
        
         if self.alpha == 0:
-            return [sp.coo_matrix((input[layer][1], (input[layer][0][:, 0], input[layer][0][:, 1])), shape=(input[layer][2][0], input[layer][2][1])) for layer in input]
+            return [sp.coo_matrix((input['C2'][layer][1], (input['C2'][layer][0][:, 0], input['C2'][layer][0][:, 1])), shape=(input['C2'][layer][2][0], input['C2'][layer][2][1])) for layer in input['C2']]
         else:
             
             Att_C = [sp.coo_matrix((input['C2'][layer][1], (input['C2'][layer][0][:, 0], input['C2'][layer][0][:, 1])), shape=(input['C2'][layer][2][0], input['C2'][layer][2][1])) for layer in input['C2']]

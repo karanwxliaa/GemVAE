@@ -17,7 +17,7 @@ class LinBnDrop(tf.keras.Sequential):
 
 
 class GATE():
-    def __init__(self, hidden_dims1, hidden_dims2,z_dim=30,a=0.05,alpha=0.3, nonlinear=True, weight_decay=0.0001, num_hidden=256, num_proj_hidden=256, tau=0.5):
+    def __init__(self, hidden_dims1, hidden_dims2,z_dim=30,alpha=0.3, nonlinear=True, weight_decay=0.0001, num_hidden=256, num_proj_hidden=256, tau=0.5,kl_loss = 0,contrastive_loss = 10,recon_loss = 1,weight_decay_loss = 1,recon_loss_type = "MSE"):
         self.n_layers1 = len(hidden_dims1) - 1
         self.n_layers2 = len(hidden_dims2) - 1
         self.alpha = alpha
@@ -32,11 +32,17 @@ class GATE():
         self.z_dim = z_dim
         self.fc_mu = LinBnDrop(z_dim,z_dim, p=0.2)
         self.fc_var = LinBnDrop(z_dim,z_dim, p=0.2)
-        self.a = a
+
         self.tau = tau
         self.fc1 = tf.keras.layers.Dense(num_proj_hidden, activation='elu')
         self.fc2 = tf.keras.layers.Dense(num_hidden)
         self.dropout_rate = 0.1
+
+        self.kl_loss = kl_loss
+        self.contrastive_loss = contrastive_loss
+        self.recon_loss = recon_loss
+        self.weight_decay_loss = weight_decay_loss
+        self.recon_loss_type = recon_loss_type
 
         # Decoder 1
         self.W_dec1 = {}
@@ -84,8 +90,8 @@ class GATE():
         latent_rep = H
 
         # KL Divergence Loss
-        kl_loss = -0.5 * tf.reduce_sum(1 + var - tf.square(mu) - tf.exp(var), axis=1)
-        kl_loss = tf.reduce_mean(kl_loss)
+        kl_divergance_loss = -0.5 * tf.reduce_sum(1 + var - tf.square(mu) - tf.exp(var), axis=1)
+        kl_divergance_loss = tf.reduce_mean(kl_divergance_loss)
 
 
         temp=H
@@ -112,49 +118,53 @@ class GATE():
         # Data normalization (optional)
         X1_, X2_ = v1.nn.softmax(X1_), v1.nn.softmax(X2_)
 
-        # Estimate library size as in reference code
+        if self.recon_loss_type == 'ZINB':
+            #USING ZINB FOR LOSS CALC
+            # Estimate library size as in reference code
+            log_library_size1 = v1.math.log(v1.reduce_sum(X1_, axis=-1) + 1)
+            #log_library_size2 = v1.math.log(v1.reduce_sum(X2_, axis=-1) + 1)
 
-        log_library_size1 = v1.math.log(v1.reduce_sum(X1_, axis=-1) + 1)
-        log_library_size2 = v1.math.log(v1.reduce_sum(X2_, axis=-1) + 1)
+            library_size_mean1 = v1.reduce_mean(log_library_size1)
+            #library_size_variance1 = v1.math.reduce_variance(log_library_size1)
 
-        library_size_mean1 = v1.reduce_mean(log_library_size1)
-        library_size_variance1 = v1.math.reduce_variance(log_library_size1)
+            #library_size_mean2 = v1.reduce_mean(log_library_size2)
+            #library_size_variance2 = v1.math.reduce_variance(log_library_size2)
 
-        library_size_mean2 = v1.reduce_mean(log_library_size2)
-        library_size_variance2 = v1.math.reduce_variance(log_library_size2)
+            self.x_post_r1 = v1.random.normal(shape=[X1_.shape[-1]], dtype=v1.float32)
+            #self.x_post_r2 = v1.random.normal(shape=[X2_.shape[-1]], dtype=v1.float32)
 
-        self.x_post_r1 = v1.random.normal(shape=[X1_.shape[-1]], dtype=v1.float32)
-        self.x_post_r2 = v1.random.normal(shape=[X2_.shape[-1]], dtype=v1.float32)
+            # They used an additional layer between decoder and zinb loss
+            # You can consider adding it if the performance is not satisfactory 
 
-        # They used an additional layer between decoder and zinb loss
-        # You can consider adding it if the performance is not satisfactory 
+            x_post_scale1 = v1.exp(library_size_mean1) * X1_
+            #x_post_scale2 = v1.exp(library_size_mean2) * X2_
 
-        x_post_scale1 = v1.exp(library_size_mean1) * X1_
-        x_post_scale2 = v1.exp(library_size_mean2) * X2_
+            local_dispersion1 = v1.exp(self.x_post_r1)
+            #local_dispersion2 = v1.exp(self.x_post_r2)
 
-        local_dispersion1 = v1.exp(self.x_post_r1)
-        local_dispersion2 = v1.exp(self.x_post_r2)
+            x_post_dropout1 = v1.nn.dropout(X1_, self.dropout_rate)
+            #x_post_dropout2 = v1.nn.dropout(X2_, self.dropout_rate)
 
-        x_post_dropout1 = v1.nn.dropout(X1_, self.dropout_rate)
-        x_post_dropout2 = v1.nn.dropout(X2_, self.dropout_rate)
+            # ZINB Loss calculation
+            zinb_loss1 = self.zinb_model(X1, x_post_scale1, local_dispersion1, x_post_dropout1)
+            #zinb_loss2 = self.zinb_model(X2, x_post_scale2, local_dispersion2, x_post_dropout2)
+            
+            # Calculate the mean of zinb_loss1 and reconstruction_loss
 
-        # ZINB Loss calculation
-        zinb_loss1 = self.zinb_model(X1, x_post_scale1, local_dispersion1, x_post_dropout1)
-        zinb_loss2 = self.zinb_model(X2, x_post_scale2, local_dispersion2, x_post_dropout2)
-        
-        # Calculate the mean of zinb_loss1 and reconstruction_loss
+            
+            rloss = tf.reduce_mean(zinb_loss1) 
+            #rloss += tf.reduce_mean(zinb_loss2)
+            rloss*=-0.5
 
-        weight = -0.5
-        rloss = tf.reduce_mean(zinb_loss1) 
-        rloss += tf.reduce_mean(zinb_loss2)
-
-        reconstruction_loss = weight * rloss
-
-        
-        #For protein
-        #reconstruction_loss += tf.sqrt(tf.reduce_sum(tf.pow(X2 - X2_, 2)))
-
-
+            
+        else:
+            #using MSE
+            print("Using MSE for gene")
+            rloss = tf.sqrt(tf.reduce_sum(tf.pow(X1 - X1_, 2)))
+            
+        #MSE always for protien 
+        rloss += tf.sqrt(tf.reduce_sum(tf.pow(X2 - X2_, 2)))
+  
 
 
 
@@ -169,12 +179,15 @@ class GATE():
             weight_decay_loss += tf.multiply(tf.nn.l2_loss(self.W_dec2[layer]), self.weight_decay, name='weight_loss')
 
         # Total loss
-        self.loss = 10*con_loss + reconstruction_loss + weight_decay_loss + self.a*kl_loss
+        print("Loss weights are = ",self.contrastive_loss,self.recon_loss,self.weight_decay_loss,self.kl_loss)
+        self.loss = (self.contrastive_loss*con_loss) + (self.recon_loss*rloss) + (self.weight_decay_loss*weight_decay_loss) + (self.kl_loss*kl_divergance_loss)
 
         if self.alpha == 0:
+            print("\n\nAlpha = 0")
             self.Att_l = {'C1': self.C1, 'C2': self.C2}
         else:
             self.Att_l = {'C1': self.C1, 'C2': self.C2, 'prune_C1': self.prune_C1, 'prune_C2': self.prune_C2}
+            
 
         return self.c_loss, self.loss, latent_rep, self.Att_l, X1_, X2_
 
@@ -261,7 +274,7 @@ class GATE():
         return eps * std + mu
 
     def __encoder1(self, A, prune_A1, H, layer):
-        print('enc1 = ',H)
+        ##print('enc1 = ',H)
         H = tf.matmul(H, self.W1[layer])
         if layer == self.n_layers1 - 1:
             return H
@@ -276,7 +289,7 @@ class GATE():
         
 
     def __encoder2(self, A, prune_A2, H, layer):
-        print('enc2 = ',H)
+        #print('enc2 = ',H)
         H = tf.matmul(H, self.W2[layer])
         if layer == self.n_layers2 - 1:
             return H
@@ -289,7 +302,7 @@ class GATE():
                 self.prune_C2[layer], H)
     
     def __decoder1(self, H, layer):
-        print('dec1 = ',H)
+        #print('dec1 = ',H)
         H = tf.matmul(H, self.W1[layer], transpose_b=True)
         if layer == 0:
 
@@ -303,7 +316,7 @@ class GATE():
                 self.prune_C1[layer-1], H)
         
     def __decoder2(self, H, layer):
-        print('dec2 = ',H)
+        #print('dec2 = ',H)
         H = tf.matmul(H, self.W2[layer], transpose_b=True)
         if layer == 0:
 
@@ -318,9 +331,9 @@ class GATE():
         
 
     def __encoder3(self, H):
-        print('enc3 = ',H)
+        #print('enc3 = ',H)
         H = tf.keras.layers.Dense(self.z_dim)(H)
-        print('LATENT = ',H)
+        #print('LATENT = ',H)
         return H
 
 
@@ -328,10 +341,10 @@ class GATE():
 
     def define_weights1(self,hidden_dims,n_layers):
         W = {}
-        #print('TOTAL LEYRS = ',n_layers)
+        ##print('TOTAL LEYRS = ',n_layers)
         #n_layers=len(n_layers)-1
-        print('n_layers gene = ',n_layers)
-        print('Hidden dim gene = ',hidden_dims)
+        #print('n_layers gene = ',n_layers)
+        #print('Hidden dim gene = ',hidden_dims)
 
         for i in range(n_layers):
             W[i] = v1.get_variable("W%s" % i, shape=(hidden_dims[i], hidden_dims[i+1]))
@@ -357,10 +370,10 @@ class GATE():
     
     def define_weights2(self,hidden_dims,n_layers):
         w = {}
-        #print('TOTAL LEYRS = ',n_layers)
+        ##print('TOTAL LEYRS = ',n_layers)
         #n_layers=len(n_layers)-1
-        print('n_layers protein = ',n_layers)
-        print('Hidden dim protein = ',hidden_dims)
+        #print('n_layers protein = ',n_layers)
+        #print('Hidden dim protein = ',hidden_dims)
 
         for i in range(n_layers):
             w[i] = v1.get_variable("w%s" % i, shape=(hidden_dims[i], hidden_dims[i+1]))

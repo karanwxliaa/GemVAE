@@ -9,10 +9,11 @@ import scanpy as sc
 import matplotlib as plt
 
 def train_GEMVAE(adata1,adata2, 
-                hidden_dims1=[512, 30],hidden_dims2=[512, 30],z_dim=30, a=0, alpha=0, n_epochs=500, lr=0.0001, key_added='MY_ARCH',
+                hidden_dims1=[512, 30],hidden_dims2=[512, 30],z_dim=30, alpha=0, n_epochs=500, lr=0.0001, key_added='MY_ARCH',
                 gradient_clipping=5, nonlinear=True, weight_decay=0.0001,verbose=True, 
                 random_seed=2020, pre_labels=None, pre_resolution1=0.2, pre_resolution2=0.2,
-                save_attention=False, save_loss=False, save_reconstrction=False
+                save_attention=False, save_loss=False, save_reconstrction=False,
+                kl_loss = 0.01,contrastive_loss = 10,recon_loss = 1,weight_decay_loss = 1,recon_loss_type = "ZINB",task=''
                 ):
     """\
     Training graph attention auto-encoder.
@@ -68,7 +69,10 @@ def train_GEMVAE(adata1,adata2,
         adata_Vars2 =  adata2[:, adata2.var['highly_variable']]
     else:
         adata_Vars2 = adata2
-    X2 = pd.DataFrame(adata_Vars2.X[:, ], index=adata_Vars2.obs.index, columns=adata_Vars2.var.index)
+    if task =='SSC':
+        X2 = pd.DataFrame(adata_Vars2.X[:, ].toarray(), index=adata_Vars2.obs.index, columns=adata_Vars2.var.index)
+    else:
+        X2 = pd.DataFrame(adata_Vars2.X[:, ], index=adata_Vars2.obs.index, columns=adata_Vars2.var.index)
 
     if verbose:
         print('Size of Input for gene data : ', adata_Vars1.shape)
@@ -103,10 +107,11 @@ def train_GEMVAE(adata1,adata2,
 
 
     tf.compat.v1.disable_eager_execution()
-    trainer = GEMVAE(hidden_dims1=[X1.shape[1]] + hidden_dims1,hidden_dims2=[X2.shape[1]] + hidden_dims2, z_dim=z_dim,a=a,alpha=alpha, 
+    trainer = GEMVAE(hidden_dims1=[X1.shape[1]] + hidden_dims1,hidden_dims2=[X2.shape[1]] + hidden_dims2, z_dim=z_dim,alpha=alpha, 
                     n_epochs=n_epochs, lr=lr, gradient_clipping=gradient_clipping, 
                     nonlinear=nonlinear,weight_decay=weight_decay, verbose=verbose, 
-                    random_seed=random_seed                    
+                    random_seed=random_seed, 
+                    kl_loss=kl_loss,contrastive_loss=contrastive_loss,recon_loss=recon_loss,weight_decay_loss=weight_decay_loss,recon_loss_type=recon_loss_type                    
                     )
     
 
@@ -114,8 +119,8 @@ def train_GEMVAE(adata1,adata2,
     
     
     if alpha == 0:
-        trainer(G_tf1, G_tf2, G_tf1, X1,X2)
-        embeddings, attentions, loss, ReX1, ReX2= trainer.infer(G_tf1, G_tf2, G_tf1, X1,X2)
+        trainer(G_tf1, G_tf2, G_tf1,G_tf2, X1,X2)
+        embeddings, attention1,attention2, loss, ReX1, ReX2= trainer.infer(G_tf1, G_tf2, G_tf1,G_tf2, X1,X2)
     else:
         G_df1 = Spatial_Net1.copy()
         G_df2 = Spatial_Net1.copy()
@@ -152,13 +157,27 @@ def train_GEMVAE(adata1,adata2,
         prune_G_tf1 = (prune_G_tf1[0], prune_G_tf1[1], G_tf1[2])
         prune_G_tf2 = (prune_G_tf2[0], prune_G_tf2[1], G_tf2[2])
 
-        # pre-clustering result genes
-        plt.rcParams["figure.figsize"] = (5, 5)
-        sc.pl.spatial(adata1, img_key="hires", color="expression_louvain_label1", size=1.5, title='gene pre-clustering result', spot_size=1)
+        if task == 'SSC':
+            # pre-clustering result genes
+            plt.rcParams["figure.figsize"] = (5, 5)
+            sc.pl.spatial(adata1, img_key="hires", color="expression_louvain_label1", size=15, title='gene pre-clustering result', spot_size=10)
 
-        # pre-clustering result protein 
-        plt.rcParams["figure.figsize"] = (5, 5)
-        sc.pl.spatial(adata2, img_key="hires", color="expression_louvain_label2", size=1.5, title='protein pre-clustering result', spot_size=1)
+            # pre-clustering result protein 
+            plt.rcParams["figure.figsize"] = (5, 5)
+            sc.pl.spatial(adata2, img_key="hires", color="expression_louvain_label2", size=15, title='protein pre-clustering result', spot_size=10)
+        
+        elif task == 'SPATIAL_SC':
+            plt.rcParams["figure.figsize"] = (5, 5)
+            plt.rcParams["figure.figsize"] = (5, 5)
+
+        else:
+            # pre-clustering result genes
+            plt.rcParams["figure.figsize"] = (5, 5)
+            sc.pl.spatial(adata1, img_key="hires", color="expression_louvain_label1", size=1.5, title='gene pre-clustering result', spot_size=1)
+
+            # pre-clustering result protein 
+            plt.rcParams["figure.figsize"] = (5, 5)
+            sc.pl.spatial(adata2, img_key="hires", color="expression_louvain_label2", size=1.5, title='protein pre-clustering result', spot_size=1)
 
 
         trainer(G_tf1,G_tf2, prune_G_tf1,prune_G_tf2, X1,X2)
