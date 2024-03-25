@@ -22,3 +22,4 @@ Tutorial_Landau_SR1 = Landau Spots Spleen Rep 1 <br>
 Tutorial_Landau_SR2 = Landau Spots Spleen Rep 2 <br>
 Tutorial_Spatial_SC = Landau Spatial Cite Seq <br>
 Tutorial_SSC_MT = Stereo Cite Seq Mouse Thymus <br>
+Tutorial_Generated_data = Generated data
