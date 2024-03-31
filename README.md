@@ -16,7 +16,7 @@ pip install requirments.txt
 In the /data directory there are several datasets present in the zipped format which need to be extracted before running.
 
 ------------------------------------
-### Flowc Diagram Representation
+### Flow Diagram Representation
 ```mermaid
 graph LR
     init[Initialization] --> importTrain[Import train_GEMVAE]
