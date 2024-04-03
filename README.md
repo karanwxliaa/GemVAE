@@ -4,12 +4,17 @@
 
 ------------------------------------
 ### To run :
-1. Unzip all the datasets in the Data dir
-2. Install dependancies
+
+1. Install the package using the command
+```
+git clone https://github.com/karanwxliaa/GemVAE.git
+```
+2. Unzip all the datasets in the Data dir
+3. Install dependancies
 ```
 pip install requirments.txt
 ```
-2. Run the .ipynb Tutorials 
+4. Run the .ipynb Tutorials 
 
 ------------------------------------
 ### Data
