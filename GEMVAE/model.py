@@ -77,25 +77,29 @@ class GATE():
 
         # Concatenate encoder outputs
         H = tf.concat([H1, H2], axis=1)
-
+        
         # Call the third encoder
         global latent_rep 
         H = self.__encoder3(H)
+        print(H.shape)
 
-        #Latent space using a varational auto encoder
-        mu = self.fc_mu(H)
-        var = self.fc_var(H)
-        H = self.reparameterize(mu, var)
-        
+        if self.kl_loss != 0:
+            #Latent space using a varational auto encoder
+            mu = self.fc_mu(H)
+            var = self.fc_var(H)
+            H = self.reparameterize(mu, var)
+            
+            
+
+            # KL Divergence Loss
+            kl_divergance_loss = -0.5 * tf.reduce_sum(1 + var - tf.square(mu) - tf.exp(var), axis=1)
+            kl_divergance_loss = tf.reduce_mean(kl_divergance_loss)
+        else:
+            kl_divergance_loss=0
+
+        H1,H2=H,H
         latent_rep = H
 
-        # KL Divergence Loss
-        kl_divergance_loss = -0.5 * tf.reduce_sum(1 + var - tf.square(mu) - tf.exp(var), axis=1)
-        kl_divergance_loss = tf.reduce_mean(kl_divergance_loss)
-
-
-        temp=H
-        H1=temp
         # Decoder 1
         for layer in range(self.n_layers1 - 1, -1, -1):
             H1 = self.__decoder1(H1, layer)
@@ -104,7 +108,7 @@ class GATE():
                     H1 = tf.nn.elu(H1)
         X1_ = H1
 
-        H2=temp
+
         # Decoder 2
         for layer1 in range(self.n_layers2 - 1, -1, -1):
             H2 = self.__decoder2(H2, layer1)
@@ -349,6 +353,11 @@ class GATE():
         for i in range(n_layers):
             W[i] = v1.get_variable("W%s" % i, shape=(hidden_dims[i], hidden_dims[i+1]))
 
+        # # Similar initialization for W_dec1
+        # W_dec1 = {}
+        # for i in range(n_layers - 1, -1, -1):
+        #     W_dec1[i] = v1.get_variable("W_dec%s" % i, shape=(hidden_dims[i+1], hidden_dims[i]))  # Note the reversed order of hidden_dims
+        
         Ws_att = {}
         for i in range(n_layers-1):
             V= {}
@@ -377,7 +386,12 @@ class GATE():
 
         for i in range(n_layers):
             w[i] = v1.get_variable("w%s" % i, shape=(hidden_dims[i], hidden_dims[i+1]))
-
+        
+        # # Similar initialization for W_dec1
+        # W_dec2 = {}
+        # for i in range(n_layers - 1, -1, -1):
+        #     W_dec2[i] = v1.get_variable("W_dec%s" % i, shape=(hidden_dims[i+1], hidden_dims[i]))  # Note the reversed order of hidden_dims
+        
         ws_att = {}
         for i in range(n_layers-1):
             v = {}
