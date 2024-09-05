@@ -62,16 +62,20 @@ def train_GEMVAE(adata1,adata2,
         adata_Vars1 =  adata1[:, adata1.var['highly_variable']]
     else:
         adata_Vars1 = adata1
-    X1 = pd.DataFrame(adata_Vars1.X[:, ].toarray(), index=adata_Vars1.obs.index, columns=adata_Vars1.var.index)
+    try:
+        X1 = pd.DataFrame(adata_Vars1.X[:, ].toarray(), index=adata_Vars1.obs.index, columns=adata_Vars1.var.index)
+    except:
+        X1 = pd.DataFrame(adata_Vars1.X[:, ], index=adata_Vars1.obs.index, columns=adata_Vars1.var.index)
 
     
     if 'highly_variable' in adata2.var.columns:
         adata_Vars2 =  adata2[:, adata2.var['highly_variable']]
     else:
         adata_Vars2 = adata2
-    if task =='SSC':
+    
+    try:
         X2 = pd.DataFrame(adata_Vars2.X[:, ].toarray(), index=adata_Vars2.obs.index, columns=adata_Vars2.var.index)
-    else:
+    except:
         X2 = pd.DataFrame(adata_Vars2.X[:, ], index=adata_Vars2.obs.index, columns=adata_Vars2.var.index)
 
     if verbose:
@@ -166,7 +170,7 @@ def train_GEMVAE(adata1,adata2,
             plt.rcParams["figure.figsize"] = (5, 5)
             sc.pl.spatial(adata2, img_key="hires", color="expression_louvain_label2", size=15, title='protein pre-clustering result', spot_size=10)
         
-        elif task == 'SPATIAL_SC':
+        elif task == 'SPATIAL_SC' or 'GENERATED':
             plt.rcParams["figure.figsize"] = (5, 5)
             plt.rcParams["figure.figsize"] = (5, 5)
 
